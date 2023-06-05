@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Algolia\SearchBundle\Command;
 
 use Algolia\AlgoliaSearch\SearchClient;
@@ -45,37 +47,39 @@ final class SearchImportCommand extends IndexCommand
         parent::__construct($searchService);
 
         $this->searchServiceForAtomicReindex = $searchServiceForAtomicReindex;
-        $this->managerRegistry               = $managerRegistry;
-        $this->searchClient                  = $searchClient;
+        $this->managerRegistry = $managerRegistry;
+        $this->searchClient = $searchClient;
     }
 
-    /**
-     * @return void
-     */
     protected function configure()
     {
         $this
             ->setDescription('Import given entity into search engine')
             ->addOption('indices', 'i', InputOption::VALUE_OPTIONAL, 'Comma-separated list of index names')
-            ->addOption('atomic', null, InputOption::VALUE_NONE, <<<EOT
-If set, command replaces all records in an index without any downtime. It pushes a new set of objects and removes all previous ones.
+            ->addOption(
+                'atomic',
+                null,
+                InputOption::VALUE_NONE,
+                <<<'EOT'
+                If set, command replaces all records in an index without any downtime. It pushes a new set of objects and removes all previous ones.
 
-Internally, this option causes command to copy existing index settings, synonyms and query rules and indexes all objects. Finally, the existing index is replaced by the temporary one.
-EOT
+                Internally, this option causes command to copy existing index settings, synonyms and query rules and indexes all objects. Finally, the existing index is replaced by the temporary one.
+                EOT
             )
             ->addArgument(
                 'extra',
                 InputArgument::IS_ARRAY | InputArgument::OPTIONAL,
                 'Check your engine documentation for available options'
-            );
+            )
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $shouldDoAtomicReindex = (bool) $input->getOption('atomic');
-        $entitiesToIndex       = $this->getEntitiesFromArgs($input, $output);
-        $config                = $this->searchService->getConfiguration();
-        $indexingService       = ($shouldDoAtomicReindex ? $this->searchServiceForAtomicReindex : $this->searchService);
+        $entitiesToIndex = $this->getEntitiesFromArgs($input, $output);
+        $config = $this->searchService->getConfiguration();
+        $indexingService = ($shouldDoAtomicReindex ? $this->searchServiceForAtomicReindex : $this->searchService);
 
         foreach ($entitiesToIndex as $entityClassName) {
             if (!$this->searchService->isSearchable($entityClassName)) {
@@ -86,41 +90,39 @@ EOT
 
             if ($shouldDoAtomicReindex) {
                 $temporaryIndexName = $this->searchServiceForAtomicReindex->searchableAs($entityClassName);
-                $output->writeln("Creating temporary index <info>$temporaryIndexName</info>");
+                $output->writeln("Creating temporary index <info>{$temporaryIndexName}</info>");
                 $this->searchClient->copyIndex($sourceIndexName, $temporaryIndexName, ['scope' => ['settings', 'synonyms', 'rules']]);
             }
 
             $allResponses = [];
             foreach (is_subclass_of($entityClassName, Aggregator::class) ? $entityClassName::getEntities() : [$entityClassName] as $entityClass) {
-                $manager    = $this->managerRegistry->getManagerForClass($entityClass);
+                $manager = $this->managerRegistry->getManagerForClass($entityClass);
                 $repository = $manager->getRepository($entityClass);
 
                 $page = 0;
-                do {
-                    $entities = $repository->findBy(
-                        [],
-                        null,
-                        $config['batchSize'],
-                        $config['batchSize'] * $page
-                    );
+                $allEntities = $repository->findBy(['status' => ['status_accepted', 'status_queued']]);
+                $output->writeln(sprintf('COUNT IS %s', \count($allEntities)));
 
-                    $response       = $indexingService->index($manager, $entities);
+                $entitiesArray = array_chunk($allEntities, $config['batchSize']);
+
+                foreach ($entitiesArray as $entities) {
+                    $response = $indexingService->index($manager, $entities);
                     $allResponses[] = $response;
-                    $responses      = $this->formatIndexingResponse($response);
+                    $responses = $this->formatIndexingResponse($response, $output);
 
                     foreach ($responses as $indexName => $numberOfRecords) {
                         $output->writeln(sprintf(
                             'Indexed <comment>%s / %s</comment> %s entities into %s index',
                             $numberOfRecords,
-                            count($entities),
+                            \count($entities),
                             $entityClass,
-                            '<info>' . $indexName . '</info>'
+                            '<info>'.$indexName.'</info>'
                         ));
                     }
+                }
 
-                    $page++;
-                    $manager->clear();
-                } while (count($entities) >= (int) $config['batchSize']);
+                ++$page;
+                $manager->clear();
 
                 $manager->clear();
             }
@@ -130,7 +132,7 @@ EOT
                 foreach ($allResponses as $response) {
                     $response->wait();
                 }
-                $output->writeln("Moving <info>$indexName</info> -> <comment>$sourceIndexName</comment>\n");
+                $output->writeln("Moving <info>{$indexName}</info> -> <comment>{$sourceIndexName}</comment>\n");
                 $this->searchClient->moveIndex($indexName, $sourceIndexName);
             }
         }
@@ -145,17 +147,16 @@ EOT
      *
      * @return array<string, int>
      */
-    private function formatIndexingResponse($batch)
+    private function formatIndexingResponse($batch, OutputInterface $output)
     {
         $formattedResponse = [];
 
         foreach ($batch as $chunk) {
             foreach ($chunk as $indexName => $apiResponse) {
-                if (!array_key_exists($indexName, $formattedResponse)) {
+                if (!\array_key_exists($indexName, $formattedResponse)) {
                     $formattedResponse[$indexName] = 0;
                 }
-
-                $formattedResponse[$indexName] += count($apiResponse->current()['objectIDs']);
+                $formattedResponse[$indexName] += \count($apiResponse->current()['objectIDs']);
             }
         }
 
