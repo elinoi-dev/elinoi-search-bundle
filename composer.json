@@ -1,12 +1,12 @@
 {
-    "name": "algolia/search-bundle",
+    "name": "elinoi-dev/elinoi-search-bundle",
     "type": "symfony-bundle",
     "license": "MIT",
     "description": "Make sure search:import  soesn't stop mid-process",
     "authors": [
         {
-            "name": "Algolia",
-            "email": "support@algolia.com"
+            "name": "elinoi-dev",
+            "email": "cto@elinoi.com"
         }
     ],
     "prefer-stable": true,
