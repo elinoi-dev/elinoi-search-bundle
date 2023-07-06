@@ -61,10 +61,10 @@ final class SearchImportCommand extends IndexCommand
                 null,
                 InputOption::VALUE_NONE,
                 <<<'EOT'
-                If set, command replaces all records in an index without any downtime. It pushes a new set of objects and removes all previous ones.
+                    If set, command replaces all records in an index without any downtime. It pushes a new set of objects and removes all previous ones.
 
-                Internally, this option causes command to copy existing index settings, synonyms and query rules and indexes all objects. Finally, the existing index is replaced by the temporary one.
-                EOT
+                    Internally, this option causes command to copy existing index settings, synonyms and query rules and indexes all objects. Finally, the existing index is replaced by the temporary one.
+                    EOT
             )
             ->addArgument(
                 'extra',
@@ -99,30 +99,30 @@ final class SearchImportCommand extends IndexCommand
                 $manager = $this->managerRegistry->getManagerForClass($entityClass);
                 $repository = $manager->getRepository($entityClass);
 
-                $page = 0;
-                $allEntities = $repository->findBy(['status' => ['status_accepted', 'status_queued']]);
-                $output->writeln(sprintf('COUNT IS %s', \count($allEntities)));
+                $talentStatuses = ['status_accepted'];
+                foreach ($talentStatuses as $talStatus) {
+                    $allEntities = $repository->findBy(['status' => $talStatus]);
+                    $output->writeln(sprintf('Count of %s is %s', $talStatus, \count($allEntities)));
 
-                $entitiesArray = array_chunk($allEntities, $config['batchSize']);
+                    $entitiesArray = array_chunk($allEntities, $config['batchSize']);
 
-                foreach ($entitiesArray as $entities) {
-                    $response = $indexingService->index($manager, $entities);
-                    $allResponses[] = $response;
-                    $responses = $this->formatIndexingResponse($response, $output);
+                    foreach ($entitiesArray as $entities) {
+                        $response = $indexingService->index($manager, $entities);
+                        $output->writeln(sprintf('Count of %s is %s', $talStatus, \count($allEntities)));
+                        $allResponses[] = $response;
+                        $responses = $this->formatIndexingResponse($response, $output);
 
-                    foreach ($responses as $indexName => $numberOfRecords) {
-                        $output->writeln(sprintf(
-                            'Indexed <comment>%s / %s</comment> %s entities into %s index',
-                            $numberOfRecords,
-                            \count($entities),
-                            $entityClass,
-                            '<info>'.$indexName.'</info>'
-                        ));
+                        foreach ($responses as $indexName => $numberOfRecords) {
+                            $output->writeln(sprintf(
+                                'Indexed <comment>%s / %s</comment> %s entities into %s index',
+                                $numberOfRecords,
+                                \count($entities),
+                                $entityClass,
+                                '<info>'.$indexName.'</info>'
+                            ));
+                        }
                     }
                 }
-
-                ++$page;
-                $manager->clear();
 
                 $manager->clear();
             }
